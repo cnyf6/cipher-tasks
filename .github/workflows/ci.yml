@@ -1,0 +1,111 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+jobs:
+  lint-and-typecheck:
+    name: Lint and Type Check
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run ESLint
+        run: npm run lint
+
+      - name: Type check frontend
+        run: npx tsc --noEmit
+
+      - name: Install contract dependencies
+        run: cd contracts && npm ci
+
+      - name: Type check contracts
+        run: cd contracts && npx tsc --noEmit
+
+  build:
+    name: Build Application
+    runs-on: ubuntu-latest
+    needs: lint-and-typecheck
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build frontend (development)
+        run: npm run build:dev
+        env:
+          VITE_CONTRACT_ADDRESS: '0x0000000000000000000000000000000000000000'
+          VITE_SEPOLIA_CHAIN_ID: '11155111'
+          VITE_SEPOLIA_RPC_URL: 'https://ethereum-sepolia-rpc.publicnode.com'
+
+      - name: Build frontend (production)
+        run: npm run build
+        env:
+          VITE_CONTRACT_ADDRESS: '0x0000000000000000000000000000000000000000'
+          VITE_SEPOLIA_CHAIN_ID: '11155111'
+          VITE_SEPOLIA_RPC_URL: 'https://ethereum-sepolia-rpc.publicnode.com'
+
+      - name: Install contract dependencies
+        run: cd contracts && npm ci
+
+      - name: Compile contracts
+        run: cd contracts && npm run build
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-artifacts
+          path: |
+            dist/
+            contracts/artifacts/
+          retention-days: 7
+
+  security-scan:
+    name: Security Scan
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run npm audit
+        run: npm audit --audit-level=moderate
+        continue-on-error: true
+
+      - name: Install contract dependencies
+        run: cd contracts && npm ci
+
+      - name: Audit contract dependencies
+        run: cd contracts && npm audit --audit-level=moderate
+        continue-on-error: true
